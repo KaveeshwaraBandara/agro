@@ -22,6 +22,7 @@ type Result struct {
 	Remains  string
 	Next     string
 	Complete bool
+	Verified bool // a verification command (run_bash) actually executed this iteration
 }
 
 // Stepper performs one autonomous iteration given the accumulated context.
@@ -39,6 +40,7 @@ func Run(task string, s Stepper, opts Options) error {
 		max = DefaultMaxIterations
 	}
 
+	verified := false // has a verification command (run_bash) executed in any iteration?
 	for i := 1; i <= max; i++ {
 		ctx := buildContext(opts.Dir, task)
 
@@ -46,13 +48,29 @@ func Run(task string, s Stepper, opts Options) error {
 		if err != nil {
 			return fmt.Errorf("iteration %d: %w", i, err)
 		}
+		if res.Verified {
+			verified = true
+		}
+
+		// Completion guard: never honor COMPLETE: yes unless a verification
+		// command (run_bash) has actually executed. Otherwise the model can
+		// mark the task done on a false belief (e.g. "tests passed" but the
+		// test command never ran). When completion is claimed without
+		// verification, reject it and push one more iteration demanding the
+		// verification actually run.
+		complete := res.Complete && verified
+		next := res.Next
+		if res.Complete && !verified {
+			next = "Completion was claimed but NO verification command (run_bash) has executed yet. " +
+				"Actually run the verification (e.g. the tests / the program) and include its real output before claiming COMPLETE: yes."
+		}
 
 		if err := writeState(opts.Dir, Record{
 			Iteration: i,
 			Summary:   res.Summary,
 			Remains:   res.Remains,
-			Next:      res.Next,
-			Complete:  res.Complete,
+			Next:      next,
+			Complete:  complete,
 		}); err != nil {
 			return fmt.Errorf("iteration %d: writing STATE.md: %w", i, err)
 		}
@@ -83,11 +101,13 @@ NEXT: <the next concrete step, or "none">
 COMPLETE: yes   (only if the entire Task is finished; otherwise COMPLETE: no)`
 
 func (s LLMStepper) Step(ctx string) (Result, error) {
-	final, err := loop.RunCollect(s.Client, ctx+stepInstruction, s.MaxTurns, s.Verbose)
+	final, ranBash, err := loop.RunCollect(s.Client, ctx+stepInstruction, s.MaxTurns, s.Verbose)
 	if err != nil {
 		return Result{}, err
 	}
-	return parseResult(final), nil
+	r := parseResult(final)
+	r.Verified = ranBash // completion is only honored if a run_bash actually ran
+	return r, nil
 }
 
 // parseResult extracts the status footer from the agent's final message.

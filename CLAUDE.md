@@ -1,7 +1,7 @@
 # agro
 
 Model-agnostic coding agent in Go. Talks to any OpenAI-compatible `/chat/completions`
-backend (Groq default), so you swap providers via env vars with no code change. Ships
+backend (Gemini default), so you swap providers via env vars with no code change. Ships
 three tools (`read_file`, `write_file`, `run_bash`) driven by a single-task agent loop:
 model → tool calls → results → repeat until the model replies `DONE:`.
 
@@ -16,7 +16,8 @@ model → tool calls → results → repeat until the model replies `DONE:`.
 ## Conventions
 
 - Tools return errors as **strings**, never panic — the model reads the error and recovers.
-- Backend swapped via env: `AGENT_BASE_URL`, `AGENT_MODEL`, `AGENT_API_KEY` (key required).
+- Backend swapped via env: `AGENT_BASE_URL`, `AGENT_MODEL`, `AGENT_API_KEY` (key required). Default is Gemini (`gemini-2.5-flash`) — it emits structured tool calls cleanly; Llama-on-Groq often malformed them.
+- Gemini free tier is ~5 req/min, so `--auto` may hit 429s on bursts; the 429 backoff (honors the provider retry hint) handles it — runs just slow down.
 - The loop exits when an assistant message starts with `DONE:`.
 - Autonomous mode (`--auto`) is hard-capped at `--max-iterations` (default 10) and exits when STATE.md `Status: complete`.
 - Destructive `run_bash` commands (rm/mv/dd/git push/...) are blocked unless `--yes` or interactively confirmed.

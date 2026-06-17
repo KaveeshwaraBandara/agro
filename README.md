@@ -1,7 +1,7 @@
 # agro — a lightweight, model-agnostic coding agent
 
 A minimal coding agent in Go. Talks to any OpenAI-compatible API, so you swap
-between Groq (default), Gemini, OpenRouter, Cerebras, or local Ollama by changing
+between Gemini (default), Groq, OpenRouter, Cerebras, or local Ollama by changing
 config — no code changes. This is the **Phase 0 + Phase 1 slice**: a working
 single-task agent loop with three tools.
 
@@ -35,13 +35,19 @@ export AGENT_API_KEY=your_key_here
 
 | Provider  | AGENT_BASE_URL                          | AGENT_MODEL (example)        |
 |-----------|-----------------------------------------|------------------------------|
+| Gemini ★  | https://generativelanguage.googleapis.com/v1beta/openai | gemini-2.5-flash |
 | Groq      | https://api.groq.com/openai/v1          | llama-3.3-70b-versatile      |
-| Gemini    | https://generativelanguage.googleapis.com/v1beta/openai | gemini-2.5-flash |
 | OpenRouter| https://openrouter.ai/api/v1            | (any :free model)            |
 | Cerebras  | https://api.cerebras.ai/v1              | llama-3.3-70b                |
 | Ollama    | http://localhost:11434/v1               | qwen2.5-coder:7b             |
 
-Default backend is Groq. Just set `AGENT_API_KEY` and go.
+Default backend is **Gemini** (★) — it handles structured tool calls cleanly,
+whereas Llama-on-Groq frequently malformed them. Just set `AGENT_API_KEY` and go;
+override `AGENT_BASE_URL` / `AGENT_MODEL` to switch to any provider above.
+
+> Rate limits: the Gemini free tier allows ~5 requests/minute, so the autonomous
+> loop (`--auto`) can hit `429`s on bursts. The client's per-class backoff honors
+> the provider's retry hint and retries, so this is handled — runs just slow down.
 
 > Privacy note: free no-credit-card tiers are typically funded by your prompts.
 > Keep secrets and customer data off them.

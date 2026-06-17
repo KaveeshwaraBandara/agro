@@ -20,17 +20,18 @@ type Client struct {
 	HTTP    *http.Client
 }
 
-// New reads config from env with Groq as the default backend.
-//   AGENT_BASE_URL  (default: https://api.groq.com/openai/v1)
-//   AGENT_MODEL     (default: llama-3.3-70b-versatile)
+// New reads config from env with Gemini as the default backend (it handles
+// structured tool calls cleanly). Groq and others remain swappable via env.
+//   AGENT_BASE_URL  (default: https://generativelanguage.googleapis.com/v1beta/openai)
+//   AGENT_MODEL     (default: gemini-2.5-flash)
 //   AGENT_API_KEY   (required)
 func New() (*Client, error) {
 	key := os.Getenv("AGENT_API_KEY")
 	if key == "" {
 		return nil, fmt.Errorf("AGENT_API_KEY not set")
 	}
-	base := getenv("AGENT_BASE_URL", "https://api.groq.com/openai/v1")
-	model := getenv("AGENT_MODEL", "llama-3.3-70b-versatile")
+	base := getenv("AGENT_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
+	model := getenv("AGENT_MODEL", "gemini-2.5-flash")
 	return &Client{
 		BaseURL: base,
 		Model:   model,

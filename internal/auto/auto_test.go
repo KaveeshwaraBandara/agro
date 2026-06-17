@@ -3,9 +3,11 @@ package auto
 import "testing"
 
 // mockStepper completes on the completeAt-th call (0 = never completes).
+// verified controls whether each iteration reports a real verification ran.
 type mockStepper struct {
 	calls      int
 	completeAt int
+	verified   bool
 }
 
 func (m *mockStepper) Step(_ string) (Result, error) {
@@ -15,6 +17,7 @@ func (m *mockStepper) Step(_ string) (Result, error) {
 		Remains:  "more to do",
 		Next:     "the next step",
 		Complete: m.completeAt != 0 && m.calls >= m.completeAt,
+		Verified: m.verified,
 	}, nil
 }
 
@@ -37,7 +40,7 @@ func TestRunEnforcesIterationCap(t *testing.T) {
 // The done-check exits the loop early once STATE.md says complete.
 func TestRunDoneCheckExitsEarly(t *testing.T) {
 	dir := t.TempDir()
-	m := &mockStepper{completeAt: 2} // completes on the 2nd iteration
+	m := &mockStepper{completeAt: 2, verified: true} // completes (and verified) on iteration 2
 	err := Run("do it", m, Options{Dir: dir, MaxIterations: 10})
 	if err != nil {
 		t.Fatalf("expected clean exit on completion, got: %v", err)
@@ -57,6 +60,38 @@ func TestRunDefaultsToTenIterations(t *testing.T) {
 	_ = Run("do it", m, Options{Dir: dir, MaxIterations: 0})
 	if m.calls != DefaultMaxIterations {
 		t.Fatalf("expected default cap %d, got %d", DefaultMaxIterations, m.calls)
+	}
+}
+
+// COMPLETE: yes is rejected when no verification (run_bash) ever ran — the loop
+// must keep pushing iterations instead of honoring a false completion.
+func TestRunRejectsCompletionWithoutVerification(t *testing.T) {
+	dir := t.TempDir()
+	m := &mockStepper{completeAt: 1, verified: false} // claims complete, never verified
+	err := Run("do it", m, Options{Dir: dir, MaxIterations: 3})
+	if err == nil {
+		t.Fatal("expected completion to be rejected when no run_bash executed")
+	}
+	if isComplete(dir) {
+		t.Fatal("STATE.md must NOT be marked complete without verification")
+	}
+	if m.calls != 3 {
+		t.Fatalf("expected the loop to keep pushing to the cap, got %d iterations", m.calls)
+	}
+}
+
+// Once verification has run, COMPLETE: yes is honored (guard does not over-reject).
+func TestRunHonorsCompletionWithVerification(t *testing.T) {
+	dir := t.TempDir()
+	m := &mockStepper{completeAt: 1, verified: true}
+	if err := Run("do it", m, Options{Dir: dir, MaxIterations: 5}); err != nil {
+		t.Fatalf("expected verified completion to be honored, got: %v", err)
+	}
+	if !isComplete(dir) {
+		t.Fatal("STATE.md should be marked complete after verified completion")
+	}
+	if m.calls != 1 {
+		t.Fatalf("expected exit on the first verified completion, got %d", m.calls)
 	}
 }
 
