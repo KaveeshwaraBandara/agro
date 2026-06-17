@@ -1,0 +1,18 @@
+# compiled binary
+/myagent
+*.exe
+
+# local config / secrets
+.env
+*.key
+config.json
+~/.config/myagent/
+
+# driver state
+build/.driver_state
+
+# redundant starter tarball
+myagent-starter.tar.gz
+
+# OS noise
+.DS_Store
