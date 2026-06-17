@@ -1,4 +1,4 @@
-Read the myagent codebase (Go). Implement Phase 4: externalized, resumable
+Read the agro codebase (Go). Implement Phase 4: externalized, resumable
 state. Specifically:
 1. On startup, if `CLAUDE.md` exists at the repo root, load it and prepend its
    contents to the system context so project conventions are always in scope.

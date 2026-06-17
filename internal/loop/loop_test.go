@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"myagent/internal/llm"
+	"agro/internal/llm"
 )
 
 // mockResult is one scripted response from the mock client.

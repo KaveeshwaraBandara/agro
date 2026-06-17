@@ -1,4 +1,4 @@
-# myagent — a lightweight, model-agnostic coding agent
+# agro — a lightweight, model-agnostic coding agent
 
 A minimal coding agent in Go. Talks to any OpenAI-compatible API, so you swap
 between Groq (default), Gemini, OpenRouter, Cerebras, or local Ollama by changing
@@ -21,14 +21,14 @@ single-binary distribution do. Go gives you both without Rust's development drag
 ## Build
 
 ```bash
-go build -o myagent ./cmd/myagent
+go build -o agro ./cmd/agro
 ```
 
 ## Run
 
 ```bash
 export AGENT_API_KEY=your_key_here
-./myagent "create a file primes.py that prints the first 20 primes, then run it"
+./agro "create a file primes.py that prints the first 20 primes, then run it"
 ```
 
 ## Provider config (swap by env var)
@@ -49,7 +49,7 @@ Default backend is Groq. Just set `AGENT_API_KEY` and go.
 ## Layout
 
 ```
-cmd/myagent/main.go      CLI entry
+cmd/agro/main.go      CLI entry
 internal/llm/client.go   OpenAI-compatible client
 internal/tools/tools.go  read_file, write_file, run_bash
 internal/loop/loop.go    the agent loop
@@ -72,7 +72,7 @@ Validate this slice first by running a real task against Groq. Then hand the nex
 phase to Claude Code headless. Kickoff prompt for Phase 2:
 
 ```
-Read the myagent codebase (Go). It's a coding agent with an OpenAI-compatible
+Read the agro codebase (Go). It's a coding agent with an OpenAI-compatible
 client, three tools, and a single-task loop. Implement Phase 2: tool-calling
 robustness. Specifically:
 1. Handle multiple tool calls in one assistant turn (already looped — verify and test).

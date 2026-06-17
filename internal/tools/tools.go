@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"myagent/internal/llm"
+	"agro/internal/llm"
 )
 
 // Gate guards run_bash against destructive commands. By default

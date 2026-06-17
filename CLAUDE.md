@@ -1,4 +1,4 @@
-# myagent
+# agro
 
 Model-agnostic coding agent in Go. Talks to any OpenAI-compatible `/chat/completions`
 backend (Groq default), so you swap providers via env vars with no code change. Ships
@@ -7,7 +7,7 @@ model → tool calls → results → repeat until the model replies `DONE:`.
 
 ## Architecture
 
-- `cmd/myagent` — CLI entry: flags (`-max-turns`, `-v`, `-auto`, `-max-iterations`, `-yes`), builds the client, runs the loop.
+- `cmd/agro` — CLI entry: flags (`-max-turns`, `-v`, `-auto`, `-max-iterations`, `-yes`), builds the client, runs the loop.
 - `internal/llm` — OpenAI-compatible HTTP client + wire types; reads config from env. `APIError` carries status+body for retry classification.
 - `internal/tools` — tool schemas + `Dispatch`; `Gate` blocks destructive `run_bash` commands unless `--yes`/confirmed.
 - `internal/loop` — the agent loop: drives turns (`Run`/`RunCollect`), retries transient API failures, detects completion.

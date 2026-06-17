@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"myagent/internal/loop"
+	"agro/internal/loop"
 )
 
 // DefaultMaxIterations caps the autonomous loop so it can never run forever.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# driver.sh — drive Claude Code headless to build myagent phase by phase.
+# driver.sh — drive Claude Code headless to build agro phase by phase.
 #
 # For each build/phases/phaseN.md (in order), run Claude Code, then GATE on
 # `go build ./...` && `go test ./...`. Advance only when the gate passes.

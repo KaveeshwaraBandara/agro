@@ -1,12 +1,12 @@
 # compiled binary
-/myagent
+/agro
 *.exe
 
 # local config / secrets
 .env
 *.key
 config.json
-~/.config/myagent/
+~/.config/agro/
 
 # driver state
 build/.driver_state

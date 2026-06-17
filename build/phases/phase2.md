@@ -1,4 +1,4 @@
-Read the myagent codebase (Go). It's a coding agent with an OpenAI-compatible
+Read the agro codebase (Go). It's a coding agent with an OpenAI-compatible
 client, three tools, and a single-task loop. Implement Phase 2: tool-calling
 robustness. Specifically:
 1. Handle multiple tool calls in one assistant turn (already looped — verify and test).

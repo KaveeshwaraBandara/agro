@@ -1,4 +1,4 @@
-Read the myagent codebase (Go). It's a coding agent with an OpenAI-compatible
+Read the agro codebase (Go). It's a coding agent with an OpenAI-compatible
 client, tools, and a single-task loop. Implement Phase 3: grep + context
 management. Specifically:
 1. Ensure a `grep` tool exists (added in Phase 2): search files by regex and

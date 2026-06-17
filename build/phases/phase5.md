@@ -1,4 +1,4 @@
-Read the myagent codebase (Go). Implement Phase 5: autonomous loop with safety.
+Read the agro codebase (Go). Implement Phase 5: autonomous loop with safety.
 Specifically:
 1. Add an autonomous mode (flag `--auto`) where, given a high-level task, the
    agent self-prompts the next concrete sub-goal each iteration and continues

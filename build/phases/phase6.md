@@ -1,4 +1,4 @@
-Read the myagent codebase (Go). Implement Phase 6: CLI polish, packaging, docs.
+Read the agro codebase (Go). Implement Phase 6: CLI polish, packaging, docs.
 Specifically:
 1. Polish the CLI: clear `--help`/usage text, a `--version` flag, sensible exit
    codes (0 success, non-zero on failure), and a quieter default verbosity with

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"myagent/internal/llm"
-	"myagent/internal/tools"
+	"agro/internal/llm"
+	"agro/internal/tools"
 )
 
 const systemPrompt = `You are a coding agent. You complete the user's task by using the

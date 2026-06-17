@@ -1,4 +1,4 @@
-Read the myagent codebase (Go). Implement Phase 7: CLI key / provider
+Read the agro codebase (Go). Implement Phase 7: CLI key / provider
 management.
 
 NOTE: the original feature description was not supplied; this spec is an
@@ -9,14 +9,14 @@ intended design differs.
 Goal: let users store and switch between named provider profiles instead of
 re-exporting env vars every time. Specifically:
 1. Add a `keys` subcommand group:
-   - `myagent keys set <name> --key K [--base-url U] [--model M]` — save a
+   - `agro keys set <name> --key K [--base-url U] [--model M]` — save a
      profile (e.g. groq, gemini, openrouter, cerebras, ollama).
-   - `myagent keys list` — list profile names with base-url/model and a MASKED
+   - `agro keys list` — list profile names with base-url/model and a MASKED
      key (e.g. `sk-…last4`); never print full secrets.
-   - `myagent keys use <name>` — mark a profile as the active default.
-   - `myagent keys rm <name>` — delete a profile.
+   - `agro keys use <name>` — mark a profile as the active default.
+   - `agro keys rm <name>` — delete a profile.
 2. Persist profiles to a config file under
-   `${XDG_CONFIG_HOME:-$HOME/.config}/myagent/config.json`, created with `0600`
+   `${XDG_CONFIG_HOME:-$HOME/.config}/agro/config.json`, created with `0600`
    permissions (it holds secrets).
 3. Resolution order when running a task (highest wins): explicit env vars
    (AGENT_API_KEY/BASE_URL/MODEL) > `--provider <name>` flag > the active
