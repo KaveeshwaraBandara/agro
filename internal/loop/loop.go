@@ -14,9 +14,10 @@ import (
 )
 
 const systemPrompt = `You are a coding agent. You complete the user's task by using the
-provided tools: read_file, write_file, run_bash. Work step by step. Inspect the workspace
-before changing it. When the task is fully complete, reply with a final message that begins
-with "DONE:" and briefly summarizes what you did. Do not say DONE until the work is verified.`
+provided tools: read_file, write_file, run_bash, grep. Work step by step. Inspect the
+workspace before changing it (use grep to locate code). When the task is fully complete,
+reply with a final message that begins with "DONE:" and briefly summarizes what you did.
+Do not say DONE until the work is verified.`
 
 // Chatter is the subset of *llm.Client the loop depends on. Accepting an
 // interface (rather than the concrete client) lets tests inject a mock.
@@ -238,9 +239,15 @@ func RunCollect(client Chatter, task string, maxTurns int, verbose bool) (final 
 				Role:       "tool",
 				ToolCallID: tc.ID,
 				Name:       tc.Function.Name,
-				Content:    result,
+				// Cap a single result so one huge file/command output can't
+				// dominate the history; keep head + tail with a marker.
+				Content: truncateMiddle(result, maxToolResultBytes),
 			})
 		}
+		// Keep the whole conversation within the total context budget by
+		// compacting the oldest tool results first (system prompt and the most
+		// recent turns are always preserved).
+		messages = trimHistory(messages, maxHistoryBytes, keepRecentMessages)
 	}
 	return lastContent, ranBash, fmt.Errorf("hit max turns (%d) without completing", maxTurns)
 }

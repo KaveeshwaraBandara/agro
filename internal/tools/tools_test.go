@@ -65,3 +65,114 @@ func TestMatchDestructive(t *testing.T) {
 		}
 	}
 }
+
+// TestDispatch exercises every tool plus the error paths, all through the
+// public Dispatch entrypoint (the one the loop actually calls).
+func TestDispatch(t *testing.T) {
+	Gate = DestructiveGate{Allow: true} // allow run_bash here; gate is tested separately
+	defer func() { Gate = DestructiveGate{} }()
+
+	dir := t.TempDir()
+	mustJSON := func(v map[string]string) string {
+		var b strings.Builder
+		b.WriteByte('{')
+		first := true
+		for k, val := range v {
+			if !first {
+				b.WriteByte(',')
+			}
+			first = false
+			b.WriteString(quote(k))
+			b.WriteByte(':')
+			b.WriteString(quote(val))
+		}
+		b.WriteByte('}')
+		return b.String()
+	}
+
+	t.Run("write_file then read_file round-trips", func(t *testing.T) {
+		path := filepath.Join(dir, "sub", "hello.txt")
+		w := Dispatch("write_file", mustJSON(map[string]string{"path": path, "content": "hello world"}))
+		if !strings.HasPrefix(w, "OK:") {
+			t.Fatalf("write_file: expected OK, got %q", w)
+		}
+		r := Dispatch("read_file", mustJSON(map[string]string{"path": path}))
+		if r != "hello world" {
+			t.Fatalf("read_file: expected round-trip content, got %q", r)
+		}
+	})
+
+	t.Run("run_bash returns command output", func(t *testing.T) {
+		out := Dispatch("run_bash", `{"command":"echo agro-ok"}`)
+		if !strings.Contains(out, "agro-ok") {
+			t.Fatalf("run_bash: expected echoed output, got %q", out)
+		}
+	})
+
+	t.Run("grep finds matches as path:line:match", func(t *testing.T) {
+		path := filepath.Join(dir, "code.go")
+		if err := os.WriteFile(path, []byte("package main\nfunc Foo() {}\nfunc Bar() {}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out := Dispatch("grep", mustJSON(map[string]string{"pattern": `func \w+`, "path": path}))
+		if !strings.Contains(out, path+":2:func Foo() {}") {
+			t.Fatalf("grep: expected path:line:match for Foo, got %q", out)
+		}
+		if !strings.Contains(out, path+":3:func Bar() {}") {
+			t.Fatalf("grep: expected path:line:match for Bar, got %q", out)
+		}
+		if strings.Contains(out, ":1:") {
+			t.Fatalf("grep: package line should not match %q, got %q", `func \w+`, out)
+		}
+	})
+
+	t.Run("grep over a directory recurses", func(t *testing.T) {
+		out := Dispatch("grep", mustJSON(map[string]string{"pattern": "hello world", "path": dir}))
+		if !strings.Contains(out, "hello.txt:1:hello world") {
+			t.Fatalf("grep dir: expected to find file under %s, got %q", dir, out)
+		}
+	})
+
+	t.Run("grep with no match reports cleanly", func(t *testing.T) {
+		out := Dispatch("grep", mustJSON(map[string]string{"pattern": "zzz-nope-zzz", "path": dir}))
+		if !strings.HasPrefix(out, "[no matches") {
+			t.Fatalf("grep: expected a no-match notice, got %q", out)
+		}
+	})
+
+	// --- error paths: all returned as strings, never panics or empty ---
+
+	t.Run("unknown tool", func(t *testing.T) {
+		out := Dispatch("does_not_exist", `{}`)
+		if !strings.HasPrefix(out, "ERROR: unknown tool") {
+			t.Fatalf("expected unknown-tool error, got %q", out)
+		}
+	})
+
+	t.Run("malformed arguments JSON", func(t *testing.T) {
+		out := Dispatch("read_file", `{not valid json`)
+		if !strings.HasPrefix(out, "ERROR parsing arguments") {
+			t.Fatalf("expected arg-parse error, got %q", out)
+		}
+	})
+
+	t.Run("read_file missing file", func(t *testing.T) {
+		out := Dispatch("read_file", mustJSON(map[string]string{"path": filepath.Join(dir, "nope.txt")}))
+		if !strings.HasPrefix(out, "ERROR reading") {
+			t.Fatalf("expected read error, got %q", out)
+		}
+	})
+
+	t.Run("grep invalid regex", func(t *testing.T) {
+		out := Dispatch("grep", mustJSON(map[string]string{"pattern": "(unclosed", "path": dir}))
+		if !strings.HasPrefix(out, "ERROR compiling regex") {
+			t.Fatalf("expected regex-compile error, got %q", out)
+		}
+	})
+}
+
+// quote is a tiny JSON string encoder sufficient for the filesystem paths and
+// patterns used in these tests (no embedded quotes/newlines).
+func quote(s string) string {
+	return `"` + strings.ReplaceAll(s, `\`, `\\`) + `"`
+}

@@ -1,11 +1,14 @@
 package loop
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"agro/internal/llm"
+	"agro/internal/tools"
 )
 
 // mockResult is one scripted response from the mock client.
@@ -223,6 +226,90 @@ func hasCorrection(msgs []llm.Message) bool {
 		}
 	}
 	return false
+}
+
+// Issue 1: an assistant turn may request MULTIPLE tool calls. Every one must be
+// executed and its result fed back as a tool-role message keyed by the matching
+// tool_call_id, before the loop takes its next turn.
+func TestRunExecutesMultipleToolCallsInOneTurn(t *testing.T) {
+	noBackoff(t)
+	tools.Gate = tools.DestructiveGate{Allow: true}
+	defer func() { tools.Gate = tools.DestructiveGate{} }()
+
+	dir := t.TempDir()
+	fileA := filepath.Join(dir, "a.txt")
+	fileB := filepath.Join(dir, "b.txt")
+
+	multi := &llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{
+		{ID: "call_1", Type: "function", Function: llm.FunctionCall{
+			Name: "write_file", Arguments: `{"path":"` + fileA + `","content":"alpha"}`}},
+		{ID: "call_2", Type: "function", Function: llm.FunctionCall{
+			Name: "write_file", Arguments: `{"path":"` + fileB + `","content":"beta"}`}},
+	}}
+	done := &llm.Message{Role: "assistant", Content: "DONE: wrote both files"}
+	m := &mockClient{results: []mockResult{
+		{multi, nil}, // turn 1: two tool calls at once
+		{done, nil},  // turn 2: completion
+	}}
+
+	if err := Run(m, "write both files", 5, false); err != nil {
+		t.Fatalf("expected loop to complete, got: %v", err)
+	}
+
+	// Both tools actually ran.
+	if b, err := os.ReadFile(fileA); err != nil || string(b) != "alpha" {
+		t.Fatalf("first tool call did not execute: content=%q err=%v", b, err)
+	}
+	if b, err := os.ReadFile(fileB); err != nil || string(b) != "beta" {
+		t.Fatalf("second tool call did not execute: content=%q err=%v", b, err)
+	}
+
+	// Both results were fed back as tool messages with matching IDs, before the
+	// next turn (captured as the most recent Chat input).
+	got := map[string]bool{}
+	for _, mm := range m.lastIn {
+		if mm.Role == "tool" {
+			got[mm.ToolCallID] = true
+		}
+	}
+	if !got["call_1"] || !got["call_2"] {
+		t.Fatalf("expected tool results for both call_1 and call_2 fed back, got %v", got)
+	}
+}
+
+// Issue 2: when a tool fails, its error result must be fed back to the model as
+// a tool message (clearly, not swallowed) so the model can recover on the next
+// turn. The loop must not abort just because one tool returned an error.
+func TestRunFeedsBackToolError(t *testing.T) {
+	noBackoff(t)
+	missing := filepath.Join(t.TempDir(), "does-not-exist.txt")
+
+	failing := &llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{
+		{ID: "call_err", Type: "function", Function: llm.FunctionCall{
+			Name: "read_file", Arguments: `{"path":"` + missing + `"}`}},
+	}}
+	done := &llm.Message{Role: "assistant", Content: "DONE: recovered after the error"}
+	m := &mockClient{results: []mockResult{
+		{failing, nil}, // turn 1: a tool that errors
+		{done, nil},    // turn 2: model recovers
+	}}
+
+	if err := Run(m, "read a missing file then recover", 5, false); err != nil {
+		t.Fatalf("a failing tool must not abort the loop, got: %v", err)
+	}
+	if m.calls != 2 {
+		t.Fatalf("expected the loop to continue past the tool error (2 calls), got %d", m.calls)
+	}
+
+	var fedBack string
+	for _, mm := range m.lastIn {
+		if mm.Role == "tool" && mm.ToolCallID == "call_err" {
+			fedBack = mm.Content
+		}
+	}
+	if !strings.HasPrefix(fedBack, "ERROR reading") {
+		t.Fatalf("expected the tool error fed back clearly as a tool message, got %q", fedBack)
+	}
 }
 
 func TestHasUnparsedToolCall(t *testing.T) {

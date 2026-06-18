@@ -1,12 +1,16 @@
 package tools
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"agro/internal/llm"
 )
@@ -84,15 +88,37 @@ func Schemas() []llm.Tool {
 				"required":   []string{"command"},
 			},
 		}},
+		{Type: "function", Function: llm.ToolFunction{
+			Name: "grep",
+			Description: "Search files for a regular expression and return matching lines as " +
+				"path:line:match. Searches a file or, for a directory, all files under it " +
+				"(recursively, skipping .git). Use this to locate code before reading or editing.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"pattern": str("Go (RE2) regular expression to search for"),
+					"path":    str("File or directory to search; defaults to the working directory"),
+				},
+				"required": []string{"pattern"},
+			},
+		}},
 	}
 }
 
 // Dispatch executes a tool call by name and returns a string result.
 // Errors are returned as strings so the model can read and recover from them.
-func Dispatch(name, argsJSON string) string {
+// A panic in any tool is recovered into an ERROR string rather than crashing
+// the agent loop — per-tool failures must never take down the run.
+func Dispatch(name, argsJSON string) (result string) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = fmt.Sprintf("ERROR: tool %q panicked: %v", name, r)
+		}
+	}()
+
 	var args map[string]string
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return fmt.Sprintf("ERROR parsing arguments: %v", err)
+		return fmt.Sprintf("ERROR parsing arguments for %s: %v (raw: %s)", name, err, argsJSON)
 	}
 	switch name {
 	case "read_file":
@@ -101,6 +127,8 @@ func Dispatch(name, argsJSON string) string {
 		return writeFile(args["path"], args["content"])
 	case "run_bash":
 		return runBash(args["command"])
+	case "grep":
+		return grep(args["pattern"], args["path"])
 	default:
 		return fmt.Sprintf("ERROR: unknown tool %q", name)
 	}
@@ -142,4 +170,80 @@ func runBash(command string) string {
 		result = "[no output]"
 	}
 	return result
+}
+
+// grepMaxMatches caps grep output so a broad pattern over a large tree can't
+// flood the model's context.
+const grepMaxMatches = 1000
+
+// errGrepLimit is a sentinel used to stop the directory walk once the match cap
+// is reached. It never escapes grep.
+var errGrepLimit = errors.New("grep match limit reached")
+
+// grep searches path for lines matching pattern (a Go RE2 regexp) and returns
+// them as "path:line:match", one per line. path may be a single file or a
+// directory (walked recursively, skipping .git). Unreadable files are skipped
+// rather than aborting the search.
+func grep(pattern, path string) string {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Sprintf("ERROR compiling regex %q: %v", pattern, err)
+	}
+	if path == "" {
+		path = "."
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Sprintf("ERROR accessing %s: %v", path, err)
+	}
+
+	var matches []string
+	searchFile := func(file string) error {
+		f, err := os.Open(file)
+		if err != nil {
+			return nil // unreadable file: skip, don't abort the walk
+		}
+		defer f.Close()
+		sc := bufio.NewScanner(f)
+		sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // tolerate long lines
+		line := 0
+		for sc.Scan() {
+			line++
+			text := sc.Text()
+			if re.MatchString(text) {
+				matches = append(matches, fmt.Sprintf("%s:%d:%s", file, line, text))
+				if len(matches) >= grepMaxMatches {
+					return errGrepLimit
+				}
+			}
+		}
+		return nil
+	}
+
+	var walkErr error
+	if info.IsDir() {
+		walkErr = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil // skip entries we can't stat
+			}
+			if d.IsDir() {
+				if d.Name() == ".git" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			return searchFile(p)
+		})
+	} else {
+		walkErr = searchFile(path)
+	}
+
+	if len(matches) == 0 {
+		return fmt.Sprintf("[no matches for %q in %s]", pattern, path)
+	}
+	out := strings.Join(matches, "\n")
+	if errors.Is(walkErr, errGrepLimit) {
+		out += fmt.Sprintf("\n[truncated at %d matches]", grepMaxMatches)
+	}
+	return out
 }
