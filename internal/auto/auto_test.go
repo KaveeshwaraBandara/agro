@@ -1,6 +1,10 @@
 package auto
 
-import "testing"
+import (
+	"testing"
+
+	"agro/internal/state"
+)
 
 // mockStepper completes on the completeAt-th call (0 = never completes).
 // verified controls whether each iteration reports a real verification ran.
@@ -32,7 +36,7 @@ func TestRunEnforcesIterationCap(t *testing.T) {
 	if m.calls != 3 {
 		t.Fatalf("iteration cap not enforced: expected 3 steps, got %d", m.calls)
 	}
-	if isComplete(dir) {
+	if state.IsComplete(dir) {
 		t.Fatal("STATE.md should not be marked complete")
 	}
 }
@@ -48,7 +52,7 @@ func TestRunDoneCheckExitsEarly(t *testing.T) {
 	if m.calls != 2 {
 		t.Fatalf("done-check did not exit early: expected 2 steps, got %d", m.calls)
 	}
-	if !isComplete(dir) {
+	if !state.IsComplete(dir) {
 		t.Fatal("STATE.md should be marked complete after early exit")
 	}
 }
@@ -72,7 +76,7 @@ func TestRunRejectsCompletionWithoutVerification(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected completion to be rejected when no run_bash executed")
 	}
-	if isComplete(dir) {
+	if state.IsComplete(dir) {
 		t.Fatal("STATE.md must NOT be marked complete without verification")
 	}
 	if m.calls != 3 {
@@ -87,7 +91,7 @@ func TestRunHonorsCompletionWithVerification(t *testing.T) {
 	if err := Run("do it", m, Options{Dir: dir, MaxIterations: 5}); err != nil {
 		t.Fatalf("expected verified completion to be honored, got: %v", err)
 	}
-	if !isComplete(dir) {
+	if !state.IsComplete(dir) {
 		t.Fatal("STATE.md should be marked complete after verified completion")
 	}
 	if m.calls != 1 {

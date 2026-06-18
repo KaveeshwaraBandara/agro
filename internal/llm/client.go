@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -18,13 +19,26 @@ type Client struct {
 	Model   string
 	APIKey  string
 	HTTP    *http.Client
+
+	// MinInterval, when > 0, spaces consecutive requests at least this far
+	// apart to stay under provider RPM limits proactively (vs. reacting to
+	// 429s). Set via AGENT_MIN_REQUEST_INTERVAL.
+	MinInterval time.Duration
+
+	// throttle state + injectable clock (now/sleep are overridden in tests).
+	mu      sync.Mutex
+	lastReq time.Time
+	now     func() time.Time
+	sleep   func(time.Duration)
 }
 
 // New reads config from env with Gemini as the default backend (it handles
 // structured tool calls cleanly). Groq and others remain swappable via env.
-//   AGENT_BASE_URL  (default: https://generativelanguage.googleapis.com/v1beta/openai)
-//   AGENT_MODEL     (default: gemini-2.5-flash)
-//   AGENT_API_KEY   (required)
+//   AGENT_BASE_URL              (default: https://generativelanguage.googleapis.com/v1beta/openai)
+//   AGENT_MODEL                 (default: gemini-2.5-flash)
+//   AGENT_API_KEY               (required)
+//   AGENT_MIN_REQUEST_INTERVAL  (duration, e.g. "13s"; default 0 = off) — min
+//                               spacing between requests for free-tier RPM caps
 func New() (*Client, error) {
 	key := os.Getenv("AGENT_API_KEY")
 	if key == "" {
@@ -32,11 +46,18 @@ func New() (*Client, error) {
 	}
 	base := getenv("AGENT_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
 	model := getenv("AGENT_MODEL", "gemini-2.5-flash")
+	minInterval, err := parseInterval(os.Getenv("AGENT_MIN_REQUEST_INTERVAL"))
+	if err != nil {
+		return nil, err
+	}
 	return &Client{
-		BaseURL: base,
-		Model:   model,
-		APIKey:  key,
-		HTTP:    &http.Client{Timeout: 120 * time.Second},
+		BaseURL:     base,
+		Model:       model,
+		APIKey:      key,
+		HTTP:        &http.Client{Timeout: 120 * time.Second},
+		MinInterval: minInterval,
+		now:         time.Now,
+		sleep:       time.Sleep,
 	}, nil
 }
 
@@ -45,6 +66,47 @@ func getenv(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// parseInterval parses an optional duration env value. "" => 0 (off).
+func parseInterval(v string) (time.Duration, error) {
+	if v == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0, fmt.Errorf("invalid AGENT_MIN_REQUEST_INTERVAL %q: %w", v, err)
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("AGENT_MIN_REQUEST_INTERVAL must be >= 0, got %q", v)
+	}
+	return d, nil
+}
+
+// throttle blocks until at least MinInterval has elapsed since the previous
+// request, then records this request's time. No-op when MinInterval <= 0.
+func (c *Client) throttle() {
+	if c.MinInterval <= 0 {
+		return
+	}
+	now := c.now
+	if now == nil {
+		now = time.Now
+	}
+	slp := c.sleep
+	if slp == nil {
+		slp = time.Sleep
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.lastReq.IsZero() {
+		if wait := c.MinInterval - now().Sub(c.lastReq); wait > 0 {
+			slp(wait)
+		}
+	}
+	c.lastReq = now()
 }
 
 // --- Wire types (OpenAI chat completions subset) ---
@@ -109,6 +171,8 @@ func (e *APIError) Error() string {
 
 // Chat sends one turn and returns the assistant message.
 func (c *Client) Chat(messages []Message, tools []Tool) (*Message, error) {
+	c.throttle() // proactively space requests under provider RPM caps
+
 	reqBody := chatRequest{Model: c.Model, Messages: messages, Tools: tools}
 	b, err := json.Marshal(reqBody)
 	if err != nil {

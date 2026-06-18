@@ -18,10 +18,6 @@ type Options struct {
 	Resume        bool   // continue from an existing STATE.md instead of starting fresh
 }
 
-// isComplete reports whether STATE.md marks the task complete. Thin wrapper over
-// state.IsComplete, used by Run and the package tests.
-func isComplete(dir string) bool { return state.IsComplete(dir) }
-
 // Result is the outcome of one autonomous iteration.
 type Result struct {
 	Summary  string
@@ -91,7 +87,7 @@ func Run(task string, s Stepper, opts Options) error {
 		}
 
 		// Done-check is driven by STATE.md, not merely by the iteration ending.
-		if isComplete(opts.Dir) {
+		if state.IsComplete(opts.Dir) {
 			return nil
 		}
 	}

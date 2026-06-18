@@ -48,6 +48,16 @@ override `AGENT_BASE_URL` / `AGENT_MODEL` to switch to any provider above.
 > Rate limits: the Gemini free tier allows ~5 requests/minute, so the autonomous
 > loop (`--auto`) can hit `429`s on bursts. The client's per-class backoff honors
 > the provider's retry hint and retries, so this is handled — runs just slow down.
+>
+> To stay under the cap *proactively* (instead of reacting to 429s), set
+> `AGENT_MIN_REQUEST_INTERVAL` — the client spaces consecutive requests at least
+> that far apart. For the Gemini free tier (5 RPM) use `13s`:
+>
+> ```bash
+> export AGENT_MIN_REQUEST_INTERVAL=13s
+> ```
+>
+> Default is `0` (off).
 
 > Privacy note: free no-credit-card tiers are typically funded by your prompts.
 > Keep secrets and customer data off them.
