@@ -18,12 +18,13 @@ func main() {
 	verbose := flag.Bool("v", true, "verbose: print turns, tool calls, and results")
 	autonomous := flag.Bool("auto", false, "autonomous mode: self-drive until STATE.md reports complete")
 	maxIters := flag.Int("max-iterations", auto.DefaultMaxIterations, "autonomous hard cap on iterations (non-negotiable)")
+	resume := flag.Bool("resume", false, "autonomous mode: continue from an existing STATE.md instead of starting fresh")
 	yes := flag.Bool("yes", false, "allow run_bash to run destructive commands (rm/mv/dd/git push/...) without confirmation")
 	flag.Parse()
 
 	task := strings.TrimSpace(strings.Join(flag.Args(), " "))
 	if task == "" {
-		fmt.Fprintln(os.Stderr, `usage: agro [-max-turns N] [-v] [-auto [-max-iterations N]] [-yes] "your task here"`)
+		fmt.Fprintln(os.Stderr, `usage: agro [-max-turns N] [-v] [-auto [-max-iterations N] [-resume]] [-yes] "your task here"`)
 		fmt.Fprintln(os.Stderr, "\nrequires env: AGENT_API_KEY (and optionally AGENT_BASE_URL, AGENT_MODEL)")
 		os.Exit(2)
 	}
@@ -46,7 +47,7 @@ func main() {
 	if *autonomous {
 		wd, _ := os.Getwd()
 		stepper := auto.LLMStepper{Client: client, MaxTurns: *maxTurns, Verbose: *verbose}
-		err = auto.Run(task, stepper, auto.Options{Dir: wd, MaxIterations: *maxIters})
+		err = auto.Run(task, stepper, auto.Options{Dir: wd, MaxIterations: *maxIters, Resume: *resume})
 	} else {
 		err = loop.Run(client, task, *maxTurns, *verbose)
 	}

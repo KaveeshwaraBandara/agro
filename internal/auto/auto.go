@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"agro/internal/loop"
+	"agro/internal/state"
 )
 
 // DefaultMaxIterations caps the autonomous loop so it can never run forever.
@@ -14,7 +15,12 @@ const DefaultMaxIterations = 10
 type Options struct {
 	Dir           string // directory holding CLAUDE.md / STATE.md
 	MaxIterations int    // hard cap; <= 0 means DefaultMaxIterations
+	Resume        bool   // continue from an existing STATE.md instead of starting fresh
 }
+
+// isComplete reports whether STATE.md marks the task complete. Thin wrapper over
+// state.IsComplete, used by Run and the package tests.
+func isComplete(dir string) bool { return state.IsComplete(dir) }
 
 // Result is the outcome of one autonomous iteration.
 type Result struct {
@@ -40,9 +46,18 @@ func Run(task string, s Stepper, opts Options) error {
 		max = DefaultMaxIterations
 	}
 
+	// Unless resuming, discard any STATE.md from a previous run so we start
+	// fresh. With --resume, the existing STATE.md is left in place and seeded
+	// into the context by state.BuildContext below.
+	if !opts.Resume {
+		if err := state.Clear(opts.Dir); err != nil {
+			return fmt.Errorf("clearing prior state: %w", err)
+		}
+	}
+
 	verified := false // has a verification command (run_bash) executed in any iteration?
 	for i := 1; i <= max; i++ {
-		ctx := buildContext(opts.Dir, task)
+		ctx := state.BuildContext(opts.Dir, task)
 
 		res, err := s.Step(ctx)
 		if err != nil {
@@ -65,7 +80,7 @@ func Run(task string, s Stepper, opts Options) error {
 				"Actually run the verification (e.g. the tests / the program) and include its real output before claiming COMPLETE: yes."
 		}
 
-		if err := writeState(opts.Dir, Record{
+		if err := state.Write(opts.Dir, state.Record{
 			Iteration: i,
 			Summary:   res.Summary,
 			Remains:   res.Remains,
