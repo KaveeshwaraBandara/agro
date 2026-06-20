@@ -46,14 +46,24 @@ func New() (*Client, error) {
 	}
 	base := getenv("AGENT_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
 	model := getenv("AGENT_MODEL", "gemini-2.5-flash")
+	return NewWith(base, model, key)
+}
+
+// NewWith builds a Client for an explicit backend (e.g. resolved from a stored
+// provider profile). apiKey is required. Throttling still honors
+// AGENT_MIN_REQUEST_INTERVAL.
+func NewWith(baseURL, model, apiKey string) (*Client, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("API key required")
+	}
 	minInterval, err := parseInterval(os.Getenv("AGENT_MIN_REQUEST_INTERVAL"))
 	if err != nil {
 		return nil, err
 	}
 	return &Client{
-		BaseURL:     base,
+		BaseURL:     baseURL,
 		Model:       model,
-		APIKey:      key,
+		APIKey:      apiKey,
 		HTTP:        &http.Client{Timeout: 120 * time.Second},
 		MinInterval: minInterval,
 		now:         time.Now,

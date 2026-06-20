@@ -134,6 +134,11 @@ func Run(client Chatter, task string, maxTurns int, verbose bool) error {
 	return err
 }
 
+// maxCorrections caps consecutive tool-format corrections within a single
+// RunCollect. After this many in a row — without a valid structured tool call
+// resetting the count — the iteration aborts instead of looping to max turns.
+const maxCorrections = 3
+
 // toolFormatCorrection is fed back when the model writes a tool call as plain
 // text (<function...>) instead of a structured tool_call. That text never
 // executes, so we must not treat it as progress or completion.
@@ -161,6 +166,18 @@ func RunCollect(client Chatter, task string, maxTurns int, verbose bool) (final 
 	toolSchemas := tools.Schemas()
 	lastContent := ""
 
+	// corrections counts consecutive tool-format corrections; it resets when a
+	// valid structured tool call runs. noteCorrection bumps it and reports
+	// whether the cap is now reached (abort).
+	corrections := 0
+	noteCorrection := func(turn int, why string) (abort bool) {
+		corrections++
+		if verbose {
+			fmt.Printf("[correction %d/%d] %s (turn %d)\n", corrections, maxCorrections, why, turn)
+		}
+		return corrections >= maxCorrections
+	}
+
 	for turn := 1; turn <= maxTurns; turn++ {
 		if verbose {
 			fmt.Printf("\n--- turn %d/%d ---\n", turn, maxTurns)
@@ -171,8 +188,8 @@ func RunCollect(client Chatter, task string, maxTurns int, verbose bool) (final 
 			// retrying reproduces it. Feed back a format correction and take a
 			// fresh turn instead of failing the run.
 			if isToolUseFailed(cerr) {
-				if verbose {
-					fmt.Printf("[correction] tool_use_failed; requesting a structured tool call (turn %d)\n", turn)
+				if noteCorrection(turn, "tool_use_failed; requesting a structured tool call") {
+					return lastContent, ranBash, fmt.Errorf("turn %d: gave up after %d correction attempts", turn, maxCorrections)
 				}
 				messages = append(messages, llm.Message{
 					Role:    "user",
@@ -199,8 +216,8 @@ func RunCollect(client Chatter, task string, maxTurns int, verbose bool) (final 
 			// — correct the format and continue. Checked BEFORE isDone so a
 			// "DONE:" mixed with <function...> can't slip through.
 			if hasUnparsedToolCall(assistant.Content) {
-				if verbose {
-					fmt.Println("[correction] unparsed tool-call syntax in content; requesting a structured tool call")
+				if noteCorrection(turn, "unparsed tool-call syntax in content") {
+					return lastContent, ranBash, fmt.Errorf("turn %d: gave up after %d correction attempts", turn, maxCorrections)
 				}
 				messages = append(messages, llm.Message{
 					Role:    "user",
@@ -220,6 +237,10 @@ func RunCollect(client Chatter, task string, maxTurns int, verbose bool) (final 
 			})
 			continue
 		}
+
+		// A valid structured tool call arrived: the model is using the protocol
+		// correctly, so reset the consecutive-correction counter.
+		corrections = 0
 
 		// Execute each requested tool call and feed results back.
 		for _, tc := range assistant.ToolCalls {

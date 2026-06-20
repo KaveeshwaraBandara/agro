@@ -330,3 +330,59 @@ func TestHasUnparsedToolCall(t *testing.T) {
 		}
 	}
 }
+
+// Three consecutive tool-format corrections abort the iteration instead of
+// looping all the way to max turns.
+func TestRunAbortsAfterMaxCorrections(t *testing.T) {
+	noBackoff(t)
+	textCall := &llm.Message{Role: "assistant", Content: `<function/run_bash({"command":"ls"})</function>`}
+	m := &mockClient{results: []mockResult{
+		{textCall, nil}, // repeats forever: every turn is a text (unparsed) tool call
+	}}
+
+	_, _, err := RunCollect(m, "do the task", 10, false)
+	if err == nil || !strings.Contains(err.Error(), "gave up after 3 correction attempts") {
+		t.Fatalf("expected the correction-cap abort error, got %v", err)
+	}
+	// maxTurns is 10, so hitting exactly maxCorrections calls proves the abort
+	// came from the correction cap, not the turn cap.
+	if m.calls != maxCorrections {
+		t.Fatalf("expected abort after %d corrections (%d Chat calls), got %d", maxCorrections, maxCorrections, m.calls)
+	}
+}
+
+// A valid structured tool call mid-sequence resets the correction counter, so
+// it takes a fresh run of corrections to abort.
+func TestRunCorrectionCounterResetsOnValidToolCall(t *testing.T) {
+	noBackoff(t)
+	tools.Gate = tools.DestructiveGate{Allow: true}
+	defer func() { tools.Gate = tools.DestructiveGate{} }()
+
+	f := filepath.Join(t.TempDir(), "ok.txt")
+	if err := os.WriteFile(f, []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	text := &llm.Message{Role: "assistant", Content: `<function/run_bash({"command":"ls"})</function>`}
+	valid := &llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{
+		ID: "c1", Type: "function",
+		Function: llm.FunctionCall{Name: "read_file", Arguments: `{"path":"` + f + `"}`},
+	}}}
+	m := &mockClient{results: []mockResult{
+		{text, nil},  // correction 1
+		{text, nil},  // correction 2
+		{valid, nil}, // valid structured tool call -> resets the counter
+		{text, nil},  // correction 1 (again)
+		{text, nil},  // correction 2
+		{text, nil},  // correction 3 -> abort (and repeats from here)
+	}}
+
+	_, _, err := RunCollect(m, "do the task", 20, false)
+	if err == nil || !strings.Contains(err.Error(), "gave up after 3 correction attempts") {
+		t.Fatalf("expected the correction-cap abort error, got %v", err)
+	}
+	// Without the reset it would abort at the 3rd Chat call; the reset pushes
+	// the abort out to the 6th.
+	if m.calls != 6 {
+		t.Fatalf("expected the reset to delay abort to the 6th Chat call, got %d", m.calls)
+	}
+}

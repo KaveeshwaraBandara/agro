@@ -16,3 +16,8 @@ myagent-starter.tar.gz
 
 # OS noise
 .DS_Store
+*.py
+*.pyc
+__pycache__/
+STATE.md
+/agro

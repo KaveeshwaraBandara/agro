@@ -31,6 +31,22 @@ export AGENT_API_KEY=your_key_here
 ./agro "create a file primes.py that prints the first 20 primes, then run it"
 ```
 
+## Stored providers (no env vars needed)
+
+Instead of exporting env vars each session, save a provider profile:
+
+```bash
+agro login                      # prompt for provider (default Gemini) + hidden key
+agro keys list                  # show configured providers (masked keys)
+agro keys use groq              # switch the active provider
+agro keys rm groq               # remove one
+```
+
+Profiles are written to `~/.config/agro/config.json` (mode `0600`). Resolution
+order when running a task: **env `AGENT_*` first**, then the active stored
+profile; if neither has a key, `agro` tells you to run `agro login` and where to
+get a free key.
+
 ## Provider config (swap by env var)
 
 | Provider  | AGENT_BASE_URL                          | AGENT_MODEL (example)        |
